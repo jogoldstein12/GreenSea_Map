@@ -78,29 +78,34 @@ class MapGenerator:
         include_layer_control: bool = True,
         tile_layer: str = "light",
         use_clustering: bool = False,
-        view_mode: str = "By Owner"
+        view_mode: str = "By Owner",
+        include_zip_layers: bool = False
     ) -> folium.Map:
         """
         Generate the complete Folium map with all layers and controls.
-        
+
         Args:
             include_layer_control: Whether to add Folium's layer control
             tile_layer: Base tile layer to use (light, dark, osm, satellite)
             use_clustering: Whether to use marker clustering (better for large datasets)
             view_mode: Initial view mode ("By Owner" or "By ZIP")
-        
+            include_zip_layers: Whether to build ZIP code layers (False by default for performance)
+
         Returns:
             Folium Map object
         """
-        logger.info(f"Generating Folium map (clustering={use_clustering}, view_mode={view_mode})")
-        
+        logger.info(f"Generating Folium map (clustering={use_clustering}, view_mode={view_mode}, include_zip_layers={include_zip_layers})")
+
         # Create base map
         m = self._create_base_map(tile_layer)
-        
+
         # Build and add all layers
+        # Note: ZIP layers are disabled by default as they can significantly slow down generation
+        # when there are many ZIP codes (50-100+)
         layers = self.layer_builder.build_all_layers(
             include_popups=True,
-            use_clustering=use_clustering
+            use_clustering=use_clustering,
+            include_zips=include_zip_layers
         )
         
         # Add clustered layer if using clustering
@@ -393,8 +398,10 @@ class MapGenerator:
             return ""
         
         try:
+            # Convert to float first to handle Decimal types and values like "44119.0"
+            # Then to int to remove decimals, then to string
             zip_df = self.parcels_gdf[
-                self.parcels_gdf["par_zip"].astype("Int64").astype(str) == str(zip_code)
+                self.parcels_gdf["par_zip"].astype(float).astype(int).astype(str) == str(zip_code)
             ].copy()
         except Exception:
             return ""
@@ -991,11 +998,12 @@ def generate_map(
     all_stats: Dict[str, Any],
     tile_layer: str = "light",
     use_clustering: bool = False,
-    view_mode: str = "By Owner"
+    view_mode: str = "By Owner",
+    include_zip_layers: bool = False
 ) -> folium.Map:
     """
     Convenience function to generate a map from city data.
-    
+
     Args:
         city_config: Dictionary with city configuration (center_lat, center_lng, zoom_level)
         parcels_gdf: GeoDataFrame with parcels
@@ -1005,10 +1013,11 @@ def generate_map(
         tile_layer: Base tile layer (light, dark, osm, satellite)
         use_clustering: Whether to use marker clustering for better performance (default: False)
         view_mode: Initial view mode - "By Owner" or "By ZIP" (default: "By Owner")
-    
+        include_zip_layers: Whether to build ZIP code layers (False by default for performance)
+
     Returns:
         Folium Map object
-    
+
     Example:
         >>> city_config = {"center_lat": 41.4993, "center_lng": -81.6944, "zoom_level": 11}
         >>> m = generate_map(city_config, gdf, owners, stats, all_stats, use_clustering=True)
@@ -1022,8 +1031,9 @@ def generate_map(
         all_stats
     )
     return generator.generate_map(
-        tile_layer=tile_layer, 
+        tile_layer=tile_layer,
         use_clustering=use_clustering,
-        view_mode=view_mode
+        view_mode=view_mode,
+        include_zip_layers=include_zip_layers
     )
 

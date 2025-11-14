@@ -67,7 +67,8 @@ def generate_cached_map(
             stats_per_owner=_stats_per_owner,
             all_stats=_all_stats,
             use_clustering=True,
-            view_mode=actual_view_mode
+            view_mode=actual_view_mode,
+            include_zip_layers=False  # Disabled for performance (can be 50-100+ layers)
         )
         return folium_map
     except Exception as e:
@@ -800,34 +801,43 @@ with col_map:
         # ====================================
         # Only include investors who actually own properties (for map performance)
         investors_with_properties = [owner for owner in stats_per_owner.keys() if stats_per_owner[owner]['count'] > 0]
-        
+
+        # PERFORMANCE OPTIMIZATION: If filtering to a single investor, only generate that investor's layer
+        # This dramatically speeds up map generation when viewing individual investors
+        if selected_owner:
+            map_target_owners = [selected_owner] if selected_owner in investors_with_properties else investors_with_properties
+            map_stats_per_owner = {selected_owner: stats_per_owner[selected_owner]} if selected_owner in stats_per_owner else stats_per_owner
+        else:
+            map_target_owners = investors_with_properties
+            map_stats_per_owner = stats_per_owner
+
         # Create cache key for session state - now includes view_mode
         current_map_key = f"{selected_city_id}_{view_mode}_{st.session_state.get('selected_owner', 'all')}"
         previous_map_key = st.session_state.get('map_cache_key', None)
-        
+
         # Check if we need to regenerate the map
         needs_regeneration = (
-            previous_map_key != current_map_key or 
+            previous_map_key != current_map_key or
             'cached_map' not in st.session_state
         )
-        
+
         if needs_regeneration:
             # Progress indicator
             progress_container = st.empty()
             progress_bar = st.progress(0)
             status_text = st.empty()
-            
+
             try:
                 # Step 1: Preparing data
                 start_time = time.time()
                 progress_bar.progress(20)
-                status_text.info(f"🗺️ Step 1/3: Preparing map data ({len(display_parcels):,} parcels, {len(investors_with_properties)} investors)...")
+                status_text.info(f"🗺️ Step 1/3: Preparing map data ({len(display_parcels):,} parcels, {len(map_target_owners)} investor{'s' if len(map_target_owners) != 1 else ''})...")
                 time.sleep(0.1)  # Brief pause for UI update
-                
+
                 # Step 2: Generate map layers
                 progress_bar.progress(40)
                 status_text.info(f"🗺️ Step 2/3: Generating map layers with clustering ({view_mode} mode)...")
-                
+
                 # Use cached map generation function
                 # Cache key: city_id, view_mode, selected_owner
                 # Data parameters prefixed with _ are not included in cache key
@@ -837,8 +847,8 @@ with col_map:
                     selected_owner=st.session_state.get('selected_owner', None),
                     _parcels_gdf=display_parcels,
                     _city_config=city_config,
-                    _target_owners=investors_with_properties,
-                    _stats_per_owner=stats_per_owner,
+                    _target_owners=map_target_owners,
+                    _stats_per_owner=map_stats_per_owner,
                     _all_stats=all_stats,
                     _view_mode_param=view_mode  # Pass to actual generator
                 )
