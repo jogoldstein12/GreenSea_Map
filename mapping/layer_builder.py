@@ -353,8 +353,9 @@ class LayerBuilder:
         
         # Filter to this ZIP (handle various data types)
         try:
-            # Convert ZIP to string for comparison
-            gdf_zips = self.gdf[self.zip_col].dropna().astype("Int64").astype(str)
+            # Convert to float first to handle Decimal types and values like "44119.0"
+            # Then to int to remove decimals, then to string for comparison
+            gdf_zips = self.gdf[self.zip_col].dropna().astype(float).astype(int).astype(str)
             mask = gdf_zips == str(zip_code)
             subset = self.gdf[mask].copy()
         except Exception as e:
@@ -448,10 +449,13 @@ class LayerBuilder:
         
         # Get unique ZIP codes
         try:
+            # Convert to float first to handle Decimal types and values like "44119.0"
+            # Then to int to remove decimals, then to string
             zip_codes = (
                 self.gdf[self.zip_col]
                 .dropna()
-                .astype("Int64")
+                .astype(float)
+                .astype(int)
                 .astype(str)
                 .drop_duplicates()
                 .sort_values()
@@ -483,10 +487,13 @@ class LayerBuilder:
             return []
         
         try:
+            # Convert to float first to handle Decimal types and values like "44119.0"
+            # Then to int to remove decimals, then to string
             return (
                 self.gdf[self.zip_col]
                 .dropna()
-                .astype("Int64")
+                .astype(float)
+                .astype(int)
                 .astype(str)
                 .drop_duplicates()
                 .sort_values()

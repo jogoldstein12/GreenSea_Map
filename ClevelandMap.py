@@ -346,15 +346,18 @@ zip_layer_vars = {}
 zip_codes = []
 if "par_zip" in merged_targets.columns:
     # Normalize ZIP codes to string without decimals
+    # Convert to float first to handle Decimal types and values like "44119.0"
+    # Then to int to remove decimals, then to string
     zip_codes = (
-        merged_targets["par_zip"].dropna().astype("Int64").astype(str).drop_duplicates().sort_values().tolist()
+        merged_targets["par_zip"].dropna().astype(float).astype(int).astype(str).drop_duplicates().sort_values().tolist()
     )
 
     # Ensure owner_color property for styling within ZIP layers
     merged_targets["owner_color"] = merged_targets["owner_clean"].map(owner_colors)
 
     for z in zip_codes:
-        zsubset = merged_targets[merged_targets["par_zip"].astype("Int64").astype(str) == z].copy()
+        # Convert to float first to handle Decimal types and values like "44119.0"
+        zsubset = merged_targets[merged_targets["par_zip"].astype(float).astype(int).astype(str) == z].copy()
         if zsubset.empty:
             continue
         # Keep only popup fields + styling + geometry
@@ -497,7 +500,8 @@ def zip_owner_table_html(zdf: pd.DataFrame) -> str:
     )
 
 def zip_panel_html(zip_code: str, df: pd.DataFrame) -> str:
-    sub = df[df.get("par_zip").astype("Int64").astype(str) == zip_code]
+    # Convert to float first to handle Decimal types and values like "44119.0"
+    sub = df[df.get("par_zip").astype(float).astype(int).astype(str) == zip_code]
     count = len(sub)
     sales_col = "sales_amount" if "sales_amount" in sub.columns else ("sales_amou" if "sales_amou" in sub.columns else None)
     total_sales = sub[sales_col].sum() if sales_col else 0
