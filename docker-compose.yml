@@ -1,0 +1,87 @@
+# ====================================
+# Multi-City GIS Portfolio Analyzer
+# Docker Compose Configuration
+# ====================================
+# This file sets up PostgreSQL with PostGIS for local development
+
+version: '3.8'
+
+services:
+  # PostgreSQL with PostGIS
+  postgres:
+    image: postgis/postgis:14-3.3
+    container_name: multi_city_gis_db
+    environment:
+      POSTGRES_DB: multi_city_gis
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gis_network
+
+  # pgAdmin (optional - web-based database management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: multi_city_gis_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - gis_network
+    profiles:
+      - with-pgadmin
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  gis_network:
+    driver: bridge
+
+# ====================================
+# Usage Instructions
+# ====================================
+# 
+# Start database only:
+#   docker-compose up -d postgres
+# 
+# Start database with pgAdmin:
+#   docker-compose --profile with-pgadmin up -d
+# 
+# Stop all services:
+#   docker-compose down
+# 
+# Stop and remove data (WARNING: deletes all data):
+#   docker-compose down -v
+# 
+# View logs:
+#   docker-compose logs -f postgres
+# 
+# Access pgAdmin:
+#   http://localhost:5050
+#   Email: admin@admin.com
+#   Password: admin
+# 
+# Connect to PostgreSQL from host:
+#   Host: localhost
+#   Port: 5432
+#   Database: multi_city_gis
+#   User: postgres
+#   Password: postgres
+

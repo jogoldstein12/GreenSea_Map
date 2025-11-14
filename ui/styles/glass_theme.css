@@ -1,0 +1,660 @@
+/* ====================================
+   PROFESSIONAL GLASS THEME
+   Multi-City GIS Portfolio Analyzer
+   
+   A sophisticated dark theme with glassmorphism effects,
+   blue-purple gradients, and smooth animations.
+==================================== */
+
+/* ====================================
+   COLOR VARIABLES
+==================================== */
+:root {
+    /* Background Colors */
+    --bg-primary: #0f0f1e;
+    --bg-secondary: #1a1a2e;
+    --bg-tertiary: #16213e;
+    
+    /* Glass Effects */
+    --glass-bg: rgba(255, 255, 255, 0.05);
+    --glass-bg-hover: rgba(255, 255, 255, 0.08);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-border-hover: rgba(255, 255, 255, 0.2);
+    
+    /* Accent Colors */
+    --accent-blue: #3b82f6;
+    --accent-purple: #8b5cf6;
+    --accent-green: #10b981;
+    --accent-yellow: #f59e0b;
+    --accent-red: #ef4444;
+    
+    /* Text Colors */
+    --text-primary: #f4f4f5;
+    --text-secondary: #e4e4e7;
+    --text-muted: #a1a1aa;
+    --text-disabled: #71717a;
+    
+    /* Shadows */
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.4);
+    --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.5);
+    
+    /* Border Radius */
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+    
+    /* Transitions */
+    --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-base: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-slow: 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ====================================
+   BODY & MAIN CONTAINER
+==================================== */
+body {
+    background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-tertiary) 100%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', sans-serif;
+    color: var(--text-secondary);
+    margin: 0;
+    padding: 0;
+}
+
+/* Streamlit Main Container */
+.main {
+    background: transparent;
+}
+
+.main .block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+    max-width: 1400px;
+}
+
+/* ====================================
+   HIDE STREAMLIT BRANDING
+==================================== */
+#MainMenu {
+    visibility: hidden;
+}
+
+footer {
+    visibility: hidden;
+}
+
+header {
+    visibility: hidden;
+}
+
+.stDeployButton {
+    visibility: hidden;
+}
+
+/* ====================================
+   GLASSMORPHISM BASE CLASS
+==================================== */
+.glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    padding: 2rem;
+    box-shadow: var(--shadow-md);
+    transition: all var(--transition-base);
+}
+
+.glass-card:hover {
+    background: var(--glass-bg-hover);
+    border-color: var(--glass-border-hover);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* ====================================
+   TYPOGRAPHY
+==================================== */
+h1 {
+    font-size: 3rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #ffffff 0%, var(--text-muted) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.75rem;
+    line-height: 1.2;
+}
+
+h2 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+    margin-bottom: 1.5rem;
+    line-height: 1.3;
+}
+
+h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 1rem;
+    margin-bottom: 1rem;
+}
+
+p {
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+/* ====================================
+   STREAMLIT BUTTONS
+==================================== */
+.stButton > button {
+    background: linear-gradient(135deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+    color: white;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    font-size: 0.9375rem;
+    transition: all var(--transition-base);
+    box-shadow: none;
+    cursor: pointer;
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+}
+
+.stButton > button:active {
+    transform: translateY(0);
+}
+
+/* Secondary Button Variant */
+.stButton.secondary > button {
+    background: var(--glass-bg);
+    color: var(--text-secondary);
+    border: 1px solid var(--glass-border);
+}
+
+.stButton.secondary > button:hover {
+    background: var(--glass-bg-hover);
+    border-color: var(--glass-border-hover);
+    box-shadow: var(--shadow-sm);
+}
+
+/* ====================================
+   INPUT FIELDS
+==================================== */
+.stTextInput > div > div > input,
+.stNumberInput > div > div > input,
+.stSelectbox > div > div > select,
+.stTextArea > div > div > textarea {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    color: var(--text-secondary);
+    padding: 0.875rem 1rem;
+    transition: all var(--transition-base);
+    font-size: 0.9375rem;
+}
+
+.stTextInput > div > div > input:focus,
+.stNumberInput > div > div > input:focus,
+.stSelectbox > div > div > select:focus,
+.stTextArea > div > div > textarea:focus {
+    background: var(--glass-bg-hover);
+    border-color: rgba(59, 130, 246, 0.5);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    outline: none;
+}
+
+.stTextInput > div > div > input::placeholder,
+.stTextArea > div > div > textarea::placeholder {
+    color: var(--text-disabled);
+}
+
+/* Input Labels */
+.stTextInput > label,
+.stNumberInput > label,
+.stSelectbox > label,
+.stTextArea > label {
+    color: var(--text-secondary);
+    font-weight: 500;
+    font-size: 0.875rem;
+}
+
+/* ====================================
+   METRICS/STATS
+==================================== */
+.stMetric {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    text-align: center;
+    transition: all var(--transition-base);
+}
+
+.stMetric:hover {
+    background: var(--glass-bg-hover);
+    border-color: var(--glass-border-hover);
+    transform: translateY(-2px);
+}
+
+.stMetric label {
+    font-size: 0.6875rem;
+    color: var(--text-disabled);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+}
+
+.stMetric [data-testid="stMetricValue"] {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.stMetric [data-testid="stMetricDelta"] {
+    font-size: 0.875rem;
+}
+
+/* ====================================
+   DATAFRAME/TABLE
+==================================== */
+.stDataFrame {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.stDataFrame table {
+    color: var(--text-secondary);
+}
+
+.stDataFrame thead tr {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.stDataFrame thead th {
+    color: var(--text-primary);
+    font-weight: 600;
+    padding: 1rem;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.stDataFrame tbody td {
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stDataFrame tbody tr:hover {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+/* ====================================
+   EXPANDER
+==================================== */
+.streamlit-expanderHeader {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-weight: 600;
+    padding: 1rem 1.25rem;
+    transition: all var(--transition-base);
+}
+
+.streamlit-expanderHeader:hover {
+    background: var(--glass-bg-hover);
+    border-color: var(--glass-border-hover);
+}
+
+.streamlit-expanderContent {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-top: none;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    padding: 1.25rem;
+}
+
+/* ====================================
+   FILE UPLOADER
+==================================== */
+.stFileUploader {
+    border: 2px dashed var(--glass-border-hover);
+    border-radius: var(--radius-lg);
+    background: rgba(255, 255, 255, 0.02);
+    padding: 3rem;
+    transition: all var(--transition-base);
+}
+
+.stFileUploader:hover {
+    border-color: rgba(59, 130, 246, 0.5);
+    background: rgba(59, 130, 246, 0.05);
+}
+
+.stFileUploader section {
+    border: none;
+}
+
+.stFileUploader [data-testid="stFileUploaderDropzone"] {
+    background: transparent;
+}
+
+/* ====================================
+   TABS
+==================================== */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.5rem;
+    background: transparent;
+    border-bottom: 1px solid var(--glass-border);
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 0.625rem 1.25rem;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    font-weight: 500;
+    transition: all var(--transition-fast);
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    background: var(--glass-bg);
+    color: var(--text-secondary);
+}
+
+.stTabs [aria-selected="true"] {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    border-bottom: none;
+}
+
+/* ====================================
+   SIDEBAR
+==================================== */
+section[data-testid="stSidebar"] {
+    background: rgba(15, 15, 30, 0.8);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid var(--glass-border);
+}
+
+section[data-testid="stSidebar"] .stMarkdown {
+    color: var(--text-secondary);
+}
+
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3 {
+    color: var(--text-primary);
+}
+
+/* ====================================
+   ALERTS/INFO BOXES
+==================================== */
+.stAlert {
+    background: rgba(59, 130, 246, 0.1);
+    border-left: 4px solid var(--accent-blue);
+    border-radius: var(--radius-md);
+    color: #93c5fd;
+    padding: 1.125rem 1.5rem;
+}
+
+.stSuccess {
+    background: rgba(16, 185, 129, 0.1);
+    border-left: 4px solid var(--accent-green);
+    color: #6ee7b7;
+}
+
+.stWarning {
+    background: rgba(245, 158, 11, 0.1);
+    border-left: 4px solid var(--accent-yellow);
+    color: #fcd34d;
+}
+
+.stError {
+    background: rgba(239, 68, 68, 0.1);
+    border-left: 4px solid var(--accent-red);
+    color: #fca5a5;
+}
+
+/* ====================================
+   PROGRESS BAR
+==================================== */
+.stProgress > div > div {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 1.5rem;
+    height: 3rem;
+    overflow: hidden;
+}
+
+.stProgress > div > div > div {
+    background: linear-gradient(90deg, var(--accent-blue) 0%, var(--accent-purple) 100%);
+    border-radius: 1.5rem;
+    height: 100%;
+}
+
+/* ====================================
+   RADIO BUTTONS
+==================================== */
+.stRadio > div {
+    gap: 1rem;
+}
+
+.stRadio > div > label {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1.25rem;
+    transition: all var(--transition-fast);
+    cursor: pointer;
+}
+
+.stRadio > div > label:hover {
+    background: var(--glass-bg-hover);
+    border-color: var(--glass-border-hover);
+}
+
+.stRadio > div > label[data-checked="true"] {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.5);
+    color: #60a5fa;
+}
+
+/* ====================================
+   CHECKBOX
+==================================== */
+.stCheckbox > label {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-md);
+    padding: 0.75rem 1rem;
+    transition: all var(--transition-fast);
+}
+
+.stCheckbox > label:hover {
+    background: var(--glass-bg-hover);
+}
+
+/* ====================================
+   COLUMNS
+==================================== */
+.row-widget.stHorizontal {
+    gap: 1.5rem;
+}
+
+[data-testid="column"] {
+    gap: 1.5rem;
+}
+
+/* ====================================
+   LINKS
+==================================== */
+a {
+    color: #60a5fa;
+    text-decoration: none;
+    transition: color var(--transition-fast);
+}
+
+a:hover {
+    color: #93c5fd;
+    text-decoration: underline;
+}
+
+/* ====================================
+   SPINNER/LOADING
+==================================== */
+.stSpinner > div {
+    border-color: var(--accent-blue);
+    border-right-color: transparent;
+}
+
+/* ====================================
+   SCROLLBAR
+==================================== */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--glass-bg);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    transition: background var(--transition-fast);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Firefox Scrollbar */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.2) var(--glass-bg);
+}
+
+/* ====================================
+   UTILITY CLASSES
+==================================== */
+.text-gradient {
+    background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.glass-hover:hover {
+    background: var(--glass-bg-hover);
+    border-color: var(--glass-border-hover);
+    transform: translateY(-2px);
+}
+
+/* ====================================
+   RESPONSIVE DESIGN
+==================================== */
+@media (max-width: 768px) {
+    h1 {
+        font-size: 2rem;
+    }
+    
+    h2 {
+        font-size: 1.5rem;
+    }
+    
+    .glass-card {
+        padding: 1.25rem;
+    }
+    
+    .main .block-container {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    h1 {
+        font-size: 1.75rem;
+    }
+    
+    .stButton > button {
+        padding: 0.625rem 1.25rem;
+        font-size: 0.875rem;
+    }
+}
+
+/* ====================================
+   ANIMATIONS
+==================================== */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.5s ease-out;
+}
+
+.animate-slide-in {
+    animation: slideIn 0.5s ease-out;
+}
+
+/* ====================================
+   PRINT STYLES
+==================================== */
+@media print {
+    body {
+        background: white;
+        color: black;
+    }
+    
+    .glass-card {
+        background: white;
+        border: 1px solid #ddd;
+    }
+    
+    .stButton,
+    section[data-testid="stSidebar"] {
+        display: none;
+    }
+}
+
