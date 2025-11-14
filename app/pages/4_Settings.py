@@ -79,13 +79,23 @@ with col_left:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
 
     # Get all cities from database
-    session = db_manager.Session()
     try:
-        cities = session.query(City).all()
+        with db_manager.get_session() as session:
+            cities_query = session.query(City).all()
+            # Convert to dictionaries to avoid session detachment issues
+            cities = [{
+                'id': city.id,
+                'city_name': city.city_name,
+                'display_name': city.display_name,
+                'state': city.state,
+                'center_lat': city.center_lat,
+                'center_lng': city.center_lng,
+                'zoom_level': city.zoom_level
+            } for city in cities_query]
 
         if cities:
             # City selector dropdown
-            city_names = [f"{city.display_name} ({city.city_name})" for city in cities]
+            city_names = [f"{city['display_name']} ({city['city_name']})" for city in cities]
             selected_city_idx = st.selectbox(
                 "Select City",
                 range(len(cities)),
@@ -99,11 +109,11 @@ with col_left:
             st.markdown(f"""
             <div style="background: rgba(255, 255, 255, 0.03); padding: 1rem; border-radius: 0.5rem; margin: 1rem 0; border: 1px solid rgba(255, 255, 255, 0.08);">
                 <div style="font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.5rem;">City Information</div>
-                <div style="font-size: 0.875rem; margin-bottom: 0.25rem;"><strong>Name:</strong> {selected_city.city_name}</div>
-                <div style="font-size: 0.875rem; margin-bottom: 0.25rem;"><strong>Display Name:</strong> {selected_city.display_name}</div>
-                <div style="font-size: 0.875rem; margin-bottom: 0.25rem;"><strong>State:</strong> {selected_city.state}</div>
-                <div style="font-size: 0.875rem; margin-bottom: 0.25rem;"><strong>Coordinates:</strong> {selected_city.center_lat}, {selected_city.center_lng}</div>
-                <div style="font-size: 0.875rem;"><strong>Zoom Level:</strong> {selected_city.zoom_level}</div>
+                <div style="font-size: 0.875rem; margin-bottom: 0.25rem;"><strong>Name:</strong> {selected_city['city_name']}</div>
+                <div style="font-size: 0.875rem; margin-bottom: 0.25rem;"><strong>Display Name:</strong> {selected_city['display_name']}</div>
+                <div style="font-size: 0.875rem; margin-bottom: 0.25rem;"><strong>State:</strong> {selected_city['state']}</div>
+                <div style="font-size: 0.875rem; margin-bottom: 0.25rem;"><strong>Coordinates:</strong> {selected_city['center_lat']}, {selected_city['center_lng']}</div>
+                <div style="font-size: 0.875rem;"><strong>Zoom Level:</strong> {selected_city['zoom_level']}</div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -124,7 +134,7 @@ with col_left:
 
                     if not st.session_state.confirm_delete:
                         st.session_state.confirm_delete = True
-                        st.warning(f"⚠️ Are you sure you want to delete {selected_city.display_name}? This will remove all associated parcels and target owners.")
+                        st.warning(f"⚠️ Are you sure you want to delete {selected_city['display_name']}? This will remove all associated parcels and target owners.")
                         st.rerun()
 
             # Delete confirmation
@@ -134,7 +144,7 @@ with col_left:
                     unsafe_allow_html=True
                 )
                 st.markdown(
-                    f"<p style='font-size: 0.875rem; margin-bottom: 0.75rem;'>⚠️ Confirm deletion of <strong>{selected_city.display_name}</strong>?</p>",
+                    f"<p style='font-size: 0.875rem; margin-bottom: 0.75rem;'>⚠️ Confirm deletion of <strong>{selected_city['display_name']}</strong>?</p>",
                     unsafe_allow_html=True
                 )
 
@@ -144,17 +154,18 @@ with col_left:
                     if st.button("✅ Yes, Delete", use_container_width=True, type="primary", key="confirm_delete_btn"):
                         try:
                             # Delete city and all associated data
-                            session.query(Parcel).filter(Parcel.city_id == selected_city.id).delete()
-                            session.query(TargetOwner).filter(TargetOwner.city_id == selected_city.id).delete()
-                            session.query(ImportHistory).filter(ImportHistory.city_id == selected_city.id).delete()
-                            session.delete(selected_city)
-                            session.commit()
+                            with db_manager.get_session() as delete_session:
+                                delete_session.query(Parcel).filter(Parcel.city_id == selected_city['id']).delete()
+                                delete_session.query(TargetOwner).filter(TargetOwner.city_id == selected_city['id']).delete()
+                                delete_session.query(ImportHistory).filter(ImportHistory.city_id == selected_city['id']).delete()
+                                city_to_delete = delete_session.query(City).filter(City.id == selected_city['id']).first()
+                                if city_to_delete:
+                                    delete_session.delete(city_to_delete)
 
-                            st.success(f"✅ Successfully deleted {selected_city.display_name} and all associated data")
+                            st.success(f"✅ Successfully deleted {selected_city['display_name']} and all associated data")
                             st.session_state.confirm_delete = False
                             st.rerun()
                         except Exception as e:
-                            session.rollback()
                             st.error(f"❌ Error deleting city: {str(e)}")
 
                 with col_confirm2:
@@ -171,8 +182,6 @@ with col_left:
 
     except Exception as e:
         st.error(f"❌ Error loading cities: {str(e)}")
-    finally:
-        session.close()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -185,12 +194,12 @@ with col_left:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
 
     # Query database statistics
-    session = db_manager.Session()
     try:
-        cities_count = session.query(func.count(City.id)).scalar()
-        parcels_count = session.query(func.count(Parcel.id)).scalar()
-        targets_count = session.query(func.count(TargetOwner.id)).scalar()
-        imports_count = session.query(func.count(ImportHistory.id)).scalar()
+        with db_manager.get_session() as session:
+            cities_count = session.query(func.count(City.id)).scalar()
+            parcels_count = session.query(func.count(Parcel.id)).scalar()
+            targets_count = session.query(func.count(TargetOwner.id)).scalar()
+            imports_count = session.query(func.count(ImportHistory.id)).scalar()
 
         # Display statistics in table format
         st.markdown("""
@@ -226,8 +235,6 @@ with col_left:
 
     except Exception as e:
         st.error(f"❌ Error loading database statistics: {str(e)}")
-    finally:
-        session.close()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -241,16 +248,16 @@ with col_right:
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
 
     # Query import history
-    session = db_manager.Session()
     try:
-        # Get recent imports (last 20)
-        imports = (
-            session.query(ImportHistory, City.display_name)
-            .join(City, ImportHistory.city_id == City.id)
-            .order_by(desc(ImportHistory.import_date))
-            .limit(20)
-            .all()
-        )
+        with db_manager.get_session() as session:
+            # Get recent imports (last 20)
+            imports = (
+                session.query(ImportHistory, City.display_name)
+                .join(City, ImportHistory.city_id == City.id)
+                .order_by(desc(ImportHistory.import_date))
+                .limit(20)
+                .all()
+            )
 
         if imports:
             # Display import history in table format
@@ -314,8 +321,6 @@ with col_right:
 
     except Exception as e:
         st.error(f"❌ Error loading import history: {str(e)}")
-    finally:
-        session.close()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
