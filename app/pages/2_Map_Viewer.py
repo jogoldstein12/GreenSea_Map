@@ -66,7 +66,7 @@ def generate_cached_map(
             target_owners=_target_owners,
             stats_per_owner=_stats_per_owner,
             all_stats=_all_stats,
-            use_clustering=True,
+            use_clustering=False,  # PERFORMANCE FIX: Disabled (original doesn't use it, polygons work better without clustering)
             view_mode=actual_view_mode,
             include_zip_layers=False  # Disabled for performance (can be 50-100+ layers)
         )
@@ -478,12 +478,16 @@ elif parcel_count > 20000:
 # ====================================
 # Determine display parcels based on selection
 # ====================================
+# PERFORMANCE FIX: Default to empty map instead of loading all 100k+ parcels
+# User must select an investor to load their portfolio
 
 selected_owner = st.session_state.get('selected_owner', None)
 if selected_owner:
     display_parcels = target_parcels[target_parcels['owner_clean'] == selected_owner].copy()
 else:
-    display_parcels = target_parcels.copy()
+    # Default: Empty GeoDataFrame - no parcels loaded until investor selected
+    # This prevents browser crashes with large datasets (100k+ parcels)
+    display_parcels = gpd.GeoDataFrame(columns=target_parcels.columns, crs=target_parcels.crs if not target_parcels.empty else 'EPSG:4326')
 
 # ====================================
 # Two-Column Layout
@@ -726,15 +730,33 @@ with col_map:
             st.error(f"❌ Missing required columns: {missing_cols}")
             st.stop()
         
+        # Check if display_parcels is empty (no investor selected)
+        if display_parcels.empty:
+            # Show friendly prompt to select an investor
+            st.markdown('<div class="glass-card" style="padding: 3rem; text-align: center;">', unsafe_allow_html=True)
+            st.markdown("### 👈 Select an Investor to View Their Portfolio")
+            st.markdown(
+                "<p style='font-size: 1rem; color: var(--text-muted); margin-top: 1rem;'>"
+                "Choose an investor from the sidebar to display their property portfolio on the map."
+                "</p>",
+                unsafe_allow_html=True
+            )
+            st.info(
+                "💡 **Performance Tip:** By loading only selected portfolios, "
+                "the map renders quickly even with 100,000+ total parcels in the database."
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.stop()
+
         # Validate geometries exist and are valid
         null_geom_count = display_parcels['geometry'].isna().sum()
         if null_geom_count > 0:
             st.warning(f"⚠️ Found {null_geom_count} parcels with null geometries (will be excluded)")
             display_parcels = display_parcels[display_parcels['geometry'].notna()].copy()
-        
-        # Check if we still have data
+
+        # Final check after filtering null geometries
         if display_parcels.empty:
-            st.error("❌ No valid parcel geometries found for mapping")
+            st.error("❌ No valid parcel geometries found for the selected investor")
             st.stop()
         
         # Validate GeoDataFrame CRS
@@ -836,11 +858,13 @@ with col_map:
 
                 # Step 2: Generate map layers
                 progress_bar.progress(40)
-                status_text.info(f"🗺️ Step 2/3: Generating map layers with clustering ({view_mode} mode)...")
+                status_text.info(f"🗺️ Step 2/3: Generating map layers ({view_mode} mode)...")
 
                 # Use cached map generation function
                 # Cache key: city_id, view_mode, selected_owner
                 # Data parameters prefixed with _ are not included in cache key
+                # PERFORMANCE FIX: use_clustering=False (original script doesn't use clustering and works fine)
+                # Clustering is designed for point markers, not polygon features
                 folium_map = generate_cached_map(
                     city_id=selected_city_id,
                     view_mode=view_mode,
