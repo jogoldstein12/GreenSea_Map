@@ -84,7 +84,7 @@ with col_left:
             cities_query = session.query(City).all()
             # Convert to dictionaries to avoid session detachment issues
             cities = [{
-                'id': city.id,
+                'city_id': city.city_id,
                 'city_name': city.city_name,
                 'display_name': city.display_name,
                 'state': city.state,
@@ -155,10 +155,10 @@ with col_left:
                         try:
                             # Delete city and all associated data
                             with db_manager.get_session() as delete_session:
-                                delete_session.query(Parcel).filter(Parcel.city_id == selected_city['id']).delete()
-                                delete_session.query(TargetOwner).filter(TargetOwner.city_id == selected_city['id']).delete()
-                                delete_session.query(ImportHistory).filter(ImportHistory.city_id == selected_city['id']).delete()
-                                city_to_delete = delete_session.query(City).filter(City.id == selected_city['id']).first()
+                                delete_session.query(Parcel).filter(Parcel.city_id == selected_city['city_id']).delete()
+                                delete_session.query(TargetOwner).filter(TargetOwner.city_id == selected_city['city_id']).delete()
+                                delete_session.query(ImportHistory).filter(ImportHistory.city_id == selected_city['city_id']).delete()
+                                city_to_delete = delete_session.query(City).filter(City.city_id == selected_city['city_id']).first()
                                 if city_to_delete:
                                     delete_session.delete(city_to_delete)
 
@@ -196,10 +196,10 @@ with col_left:
     # Query database statistics
     try:
         with db_manager.get_session() as session:
-            cities_count = session.query(func.count(City.id)).scalar()
-            parcels_count = session.query(func.count(Parcel.id)).scalar()
-            targets_count = session.query(func.count(TargetOwner.id)).scalar()
-            imports_count = session.query(func.count(ImportHistory.id)).scalar()
+            cities_count = session.query(func.count(City.city_id)).scalar()
+            parcels_count = session.query(func.count(Parcel.parcel_id)).scalar()
+            targets_count = session.query(func.count(TargetOwner.target_id)).scalar()
+            imports_count = session.query(func.count(ImportHistory.import_id)).scalar()
 
         # Display statistics in table format
         st.markdown("""
@@ -251,13 +251,22 @@ with col_right:
     try:
         with db_manager.get_session() as session:
             # Get recent imports (last 20)
-            imports = (
+            import_records = (
                 session.query(ImportHistory, City.display_name)
-                .join(City, ImportHistory.city_id == City.id)
-                .order_by(desc(ImportHistory.import_date))
+                .join(City, ImportHistory.city_id == City.city_id)
+                .order_by(desc(ImportHistory.created_at))
                 .limit(20)
                 .all()
             )
+            
+            # Convert to dictionaries BEFORE session closes (avoid "not bound to a Session" error)
+            imports = [{
+                'import_date': record[0].created_at.strftime("%Y-%m-%d %H:%M"),
+                'city_name': record[1],
+                'status': record[0].status or 'pending',
+                'parcels_count': record[0].records_imported or 0,  # Use records_imported instead
+                'target_owners_count': 0  # Placeholder - not tracked yet
+            } for record in import_records]
 
         if imports:
             # Display import history in table format
@@ -280,15 +289,19 @@ with col_right:
                 <tbody>
             """, unsafe_allow_html=True)
 
-            for import_record, city_name in imports:
-                # Format date
-                date_str = import_record.import_date.strftime("%Y-%m-%d %H:%M")
+            for import_record in imports:
+                # Extract data from dictionary
+                date_str = import_record['import_date']
+                city_name = import_record['city_name']
+                status = import_record['status']
+                parcels_count = import_record['parcels_count']
+                target_owners_count = import_record['target_owners_count']
 
                 # Status badge color
-                if import_record.status == "success":
+                if status == "success":
                     status_color = "#10b981"  # green
                     status_text = "✓ Success"
-                elif import_record.status == "failed":
+                elif status == "failed":
                     status_color = "#ef4444"  # red
                     status_text = "✗ Failed"
                 else:
@@ -304,8 +317,8 @@ with col_right:
                             {status_text}
                         </span>
                     </td>
-                    <td style="padding: 0.75rem; text-align: right; font-size: 0.875rem; font-weight: 600; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">{import_record.parcels_count:,}</td>
-                    <td style="padding: 0.75rem; text-align: right; font-size: 0.875rem; font-weight: 600; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">{import_record.target_owners_count:,}</td>
+                    <td style="padding: 0.75rem; text-align: right; font-size: 0.875rem; font-weight: 600; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">{parcels_count:,}</td>
+                    <td style="padding: 0.75rem; text-align: right; font-size: 0.875rem; font-weight: 600; border-bottom: 1px solid rgba(255, 255, 255, 0.05);">{target_owners_count:,}</td>
                 </tr>
                 """, unsafe_allow_html=True)
 
