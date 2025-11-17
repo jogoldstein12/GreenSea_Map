@@ -142,19 +142,24 @@ class MapGenerator:
             ).add_to(m)
         
         # Generate and inject sidebar HTML
-        sidebar_html = self._generate_sidebar_html(zip_codes, view_mode)
-        m.get_root().html.add_child(Element(sidebar_html))
+        # PERFORMANCE FIX: Disabled sidebar HTML overlay on map
+        # The sidebar controls are now managed by the Streamlit interface (sidebar on left)
+        # This removes floating boxes from the map and improves performance
+        # sidebar_html = self._generate_sidebar_html(zip_codes, view_mode)
+        # m.get_root().html.add_child(Element(sidebar_html))
         
         # Generate and inject JavaScript for layer toggling
-        toggle_js = self._generate_toggle_javascript(
-            m.get_name(),
-            base_layer_name,
-            owner_layer_names,
-            zip_layer_names,
-            zip_codes,
-            view_mode
-        )
-        m.get_root().script.add_child(Element(toggle_js))
+        # PERFORMANCE FIX: Disabled toggle JavaScript since sidebar is disabled
+        # All layers are now shown by default without toggling
+        # toggle_js = self._generate_toggle_javascript(
+        #     m.get_name(),
+        #     base_layer_name,
+        #     owner_layer_names,
+        #     zip_layer_names,
+        #     zip_codes,
+        #     view_mode
+        # )
+        # m.get_root().script.add_child(Element(toggle_js))
         
         logger.info("Map generation complete")
         return m
