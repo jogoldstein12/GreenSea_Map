@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 import time
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Tuple, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -18,9 +18,64 @@ sys.path.insert(0, str(project_root))
 from database.db_manager import db_manager
 from data_import.import_manager import ImportManager
 
+# Import geocoding
+from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut, GeocoderServiceError
+
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ====================================
+# Helper Functions - Geocoding
+# ====================================
+
+@st.cache_resource
+def get_geocoder():
+    """
+    Get a Nominatim geocoder instance (cached to avoid recreating).
+    Uses cache to improve performance across requests.
+    """
+    return Nominatim(user_agent="greensea_map_geocoder")
+
+def get_city_coordinates(city_name: str, state: str) -> Tuple[Optional[float], Optional[float], Optional[str]]:
+    """
+    Automatically lookup city coordinates using Nominatim geocoding.
+    
+    Args:
+        city_name: Name of the city (e.g., "Cleveland")
+        state: Name of the state (e.g., "Ohio")
+        
+    Returns:
+        Tuple of (latitude, longitude, status_message)
+        Returns (None, None, error_message) if lookup fails
+    """
+    if not city_name or not state or state == "Select state...":
+        return None, None, "Please enter a city name and select a state"
+    
+    try:
+        geolocoder = get_geocoder()
+        
+        # Format the query as "City, State, USA"
+        query = f"{city_name}, {state}, USA"
+        
+        # Perform geocoding lookup
+        location = geolocoder.geocode(query, timeout=10)
+        
+        if location:
+            return float(location.latitude), float(location.longitude), f"✅ Found coordinates for {city_name}, {state}"
+        else:
+            return None, None, f"⚠️ Could not find coordinates for '{city_name}, {state}'. Please enter manually."
+            
+    except GeocoderTimedOut:
+        logger.warning(f"Geocoding timeout for {city_name}, {state}")
+        return None, None, "⏱️ Geocoding service timed out. Please try again or enter coordinates manually."
+    except GeocoderServiceError as e:
+        logger.warning(f"Geocoding service error: {str(e)}")
+        return None, None, "⚠️ Geocoding service error. Please enter coordinates manually."
+    except Exception as e:
+        logger.error(f"Unexpected error during geocoding: {str(e)}")
+        return None, None, f"❌ Error looking up coordinates: {str(e)}"
 
 # Page config
 st.set_page_config(
@@ -362,22 +417,59 @@ if current_step == 1:
             key="state_input"
         )
     
+    # Auto-lookup coordinates section
     st.markdown("<p style='font-size: 0.875rem; color: var(--text-muted); margin-top: 1.5rem; margin-bottom: 0.5rem;'>Map Center Coordinates</p>", unsafe_allow_html=True)
+    
+    # Show lookup status
+    lookup_col1, lookup_col2 = st.columns([3, 1])
+    
+    with lookup_col1:
+        if city_name and state != "Select state...":
+            # Show lookup button
+            if st.button("🔍 Auto-Lookup Coordinates", key="lookup_coords"):
+                with st.spinner("📍 Looking up coordinates..."):
+                    lat, lng, message = get_city_coordinates(city_name, state)
+                    
+                    if lat is not None and lng is not None:
+                        st.session_state.auto_lat = lat
+                        st.session_state.auto_lng = lng
+                        st.success(message)
+                    else:
+                        st.warning(message)
+        else:
+            st.caption("💡 Enter city name and select state, then click 'Auto-Lookup Coordinates'")
+    
+    # Display coordinate inputs (read-only if auto-lookup succeeded, editable otherwise)
     col3, col4, col5 = st.columns(3)
+    
     with col3:
+        # Use auto-looked-up values if available, otherwise use existing or defaults
+        default_lat = existing_info.get('center_lat', 41.4993)
+        if 'auto_lat' in st.session_state:
+            default_lat = st.session_state.auto_lat
+        
         center_lat = st.number_input(
             "Center Latitude", 
-            value=existing_info.get('center_lat', 41.4993), 
+            value=default_lat, 
             format="%.4f",
-            key="lat_input"
+            key="lat_input",
+            help="Can be auto-populated or adjusted manually"
         )
+    
     with col4:
+        # Use auto-looked-up values if available, otherwise use existing or defaults
+        default_lng = existing_info.get('center_lng', -81.6944)
+        if 'auto_lng' in st.session_state:
+            default_lng = st.session_state.auto_lng
+        
         center_lng = st.number_input(
             "Center Longitude", 
-            value=existing_info.get('center_lng', -81.6944), 
+            value=default_lng, 
             format="%.4f",
-            key="lng_input"
+            key="lng_input",
+            help="Can be auto-populated or adjusted manually"
         )
+    
     with col5:
         zoom_level = st.number_input(
             "Default Zoom", 
@@ -386,6 +478,10 @@ if current_step == 1:
             max_value=16,
             key="zoom_input"
         )
+    
+    # Show current coordinates status
+    if 'auto_lat' in st.session_state and 'auto_lng' in st.session_state:
+        st.info(f"✅ Coordinates set: {center_lat:.4f}, {center_lng:.4f}")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
