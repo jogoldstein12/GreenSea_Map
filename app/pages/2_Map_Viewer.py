@@ -111,7 +111,49 @@ except Exception as e:
 # ====================================
 
 # Performance & Developer Options
-with st.expander("⚡ Performance & Developer Options"):
+with st.expander("⚡ Performance & Developer Options", expanded=False):
+    st.markdown("### 🎯 Dataset Settings")
+
+    # Dataset mode selector
+    col_mode1, col_mode2 = st.columns(2)
+    with col_mode1:
+        dataset_mode = st.radio(
+            "Dataset Mode",
+            options=["Target Owners Only", "All Parcels"],
+            index=0,
+            help="Target Owners Only: Fast loading (only target investors)\nAll Parcels: Show entire dataset (may be slow)"
+        )
+        st.session_state.dataset_mode = dataset_mode
+
+    with col_mode2:
+        if dataset_mode == "All Parcels":
+            # Sampling options for large datasets
+            use_sampling = st.checkbox(
+                "Enable Smart Sampling",
+                value=True,
+                help="Automatically sample large datasets to ensure fast loading"
+            )
+            st.session_state.use_sampling = use_sampling
+
+            if use_sampling:
+                sample_size = st.slider(
+                    "Sample Size",
+                    min_value=1000,
+                    max_value=100000,
+                    value=25000,
+                    step=5000,
+                    help="Maximum number of parcels to load. Larger = slower but more complete."
+                )
+                st.session_state.sample_size = sample_size
+            else:
+                st.session_state.sample_size = None
+                st.warning("⚠️ No sampling - may be very slow with 50k+ parcels!")
+        else:
+            st.session_state.use_sampling = False
+            st.session_state.sample_size = None
+            st.info("✅ Target owners mode - optimized for fast performance")
+
+    st.markdown("---")
     st.markdown("### 🚀 Performance Settings")
     st.caption("Optimize map loading for large datasets (100,000+ parcels)")
 
@@ -262,15 +304,15 @@ except Exception as e:
 # ====================================
 
 @st.cache_data(ttl=3600)
-def load_city_data(city_id, simplify_tolerance=0.0001):
+def load_city_data(city_id, simplify_tolerance=0.0001, dataset_mode="Target Owners Only", sample_size=None):
     """
-    Load parcels (OPTIMIZED: only target owner parcels) and target owners for selected city
+    Load parcels and target owners for selected city
 
     PERFORMANCE OPTIMIZATIONS:
-    - Filters parcels at database level (SQL JOIN with target_owners)
-    - Only loads parcels owned by target investors
+    - Filters parcels at database level (SQL filters)
+    - Optional sampling for large datasets
     - Simplifies geometries to reduce polygon complexity
-    - Reduces memory usage and processing time by 90%+
+    - Reduces memory usage and processing time significantly
 
     Args:
         city_id: Unique identifier for the city
@@ -279,19 +321,22 @@ def load_city_data(city_id, simplify_tolerance=0.0001):
             - 0.00005: Higher detail, ~5m precision
             - 0.0002: Lower detail, ~22m precision, faster
             - 0: No simplification (slower, larger files)
+        dataset_mode: "Target Owners Only" or "All Parcels"
+        sample_size: Maximum number of parcels to load (None = load all)
 
     Returns:
-        tuple: (city_data, parcels_gdf, target_list)
+        tuple: (city_data, parcels_gdf, target_list, total_count)
             - city_data: Dictionary with city information
-            - parcels_gdf: GeoDataFrame of TARGET OWNER parcels only
+            - parcels_gdf: GeoDataFrame of parcels
             - target_list: List of target owner names
+            - total_count: Total parcels in database (before sampling)
     """
     with db_manager.get_session() as session:
         # Get city details
         city = session.query(City).filter(City.city_id == city_id).first()
 
         if not city:
-            return None, gpd.GeoDataFrame(), []
+            return None, gpd.GeoDataFrame(), [], 0
 
         # Convert city to dict to avoid session detachment
         city_data = {
@@ -311,16 +356,43 @@ def load_city_data(city_id, simplify_tolerance=0.0001):
 
         target_list = [t.owner_clean for t in targets]
 
-        if not target_list:
-            # No target owners - return empty GeoDataFrame
-            return city_data, gpd.GeoDataFrame(), []
+        # Get total parcel count for this city (for statistics)
+        total_count = session.query(Parcel).filter(Parcel.city_id == city_id).count()
 
-        # OPTIMIZATION: Filter parcels at database level using IN clause
-        # Only load parcels that belong to target owners
-        parcels = session.query(Parcel).filter(
-            Parcel.city_id == city_id,
-            Parcel.owner_clean.in_(target_list)
-        ).all()
+        # Build parcel query based on dataset mode
+        if dataset_mode == "Target Owners Only":
+            if not target_list:
+                # No target owners - return empty GeoDataFrame
+                return city_data, gpd.GeoDataFrame(), [], total_count
+
+            # OPTIMIZATION: Filter parcels at database level using IN clause
+            # Only load parcels that belong to target owners
+            parcel_query = session.query(Parcel).filter(
+                Parcel.city_id == city_id,
+                Parcel.owner_clean.in_(target_list)
+            )
+        else:
+            # Load ALL parcels for this city
+            parcel_query = session.query(Parcel).filter(
+                Parcel.city_id == city_id
+            )
+
+        # Apply sampling if requested
+        if sample_size is not None and dataset_mode == "All Parcels":
+            # Random sampling using PostgreSQL's TABLESAMPLE
+            # Note: We'll use Python random sampling instead for better control
+            all_parcel_ids = [p.parcel_id for p in parcel_query.with_entities(Parcel.parcel_id).all()]
+
+            if len(all_parcel_ids) > sample_size:
+                import random
+                random.seed(42)  # Consistent sampling
+                sampled_ids = random.sample(all_parcel_ids, sample_size)
+                parcel_query = session.query(Parcel).filter(
+                    Parcel.parcel_id.in_(sampled_ids)
+                )
+
+        # Execute query
+        parcels = parcel_query.all()
 
         # Convert to GeoDataFrame
         if parcels:
@@ -357,7 +429,7 @@ def load_city_data(city_id, simplify_tolerance=0.0001):
         else:
             gdf = gpd.GeoDataFrame()
 
-        return city_data, gdf, target_list
+        return city_data, gdf, target_list, total_count
 
 # Load data for selected city
 try:
@@ -367,39 +439,75 @@ try:
 
     data_load_start = time.time()
 
-    # Get simplify tolerance from session state (default to balanced)
+    # Get parameters from session state
     simplify_tolerance = st.session_state.get('simplify_tolerance', 0.0001)
+    dataset_mode = st.session_state.get('dataset_mode', 'Target Owners Only')
+    sample_size = st.session_state.get('sample_size', None)
 
-    data_status.info(f"📊 Loading target owner parcels from database (detail level: {simplify_tolerance})...")
+    # Show loading message based on mode
+    if dataset_mode == "All Parcels":
+        if sample_size:
+            data_status.info(f"📊 Loading parcels from database (sample size: {sample_size:,}, detail level: {simplify_tolerance})...")
+        else:
+            data_status.warning(f"📊 Loading ALL parcels from database (no sampling - may be slow, detail level: {simplify_tolerance})...")
+    else:
+        data_status.info(f"📊 Loading target owner parcels from database (detail level: {simplify_tolerance})...")
 
-    # OPTIMIZED: Only loads parcels for target owners (not all 100k+ parcels)
-    city, parcels_gdf, target_owners = load_city_data(selected_city_id, simplify_tolerance)
+    # Load data with new parameters
+    city, parcels_gdf, target_owners, total_parcel_count = load_city_data(
+        selected_city_id,
+        simplify_tolerance,
+        dataset_mode,
+        sample_size
+    )
 
     data_load_time = time.time() - data_load_start
-    
+
     if city is None:
         data_progress.empty()
         data_status.empty()
         st.error("❌ Could not load city data.")
         st.stop()
-    
+
     if parcels_gdf.empty:
         data_progress.empty()
         data_status.empty()
-        st.warning("⚠️ No parcel data available for this market.")
-        st.info("This market may have been added but data hasn't been imported yet.")
+
+        if dataset_mode == "Target Owners Only" and len(target_owners) == 0:
+            st.warning("⚠️ No target owners found for this market.")
+            st.info("💡 **Tip:** Switch to 'All Parcels' mode in Performance Settings to view the entire dataset, "
+                    "or upload target owner data in the Upload Data page.")
+        else:
+            st.warning("⚠️ No parcel data available for this market.")
+            st.info("This market may have been added but data hasn't been imported yet.")
         st.stop()
-    
-    # Calculate performance improvement estimate
-    if len(parcels_gdf) > 10000:
-        estimated_original = len(parcels_gdf) * 10  # Rough estimate
-        performance_gain = ((estimated_original - len(parcels_gdf)) / estimated_original) * 100
-        data_status.success(
-            f"✅ Loaded {len(parcels_gdf):,} target owner parcels in {data_load_time:.1f}s "
-            f"(~{performance_gain:.0f}% faster than loading all parcels!)"
-        )
+
+    # Show success message with statistics
+    loaded_count = len(parcels_gdf)
+
+    if dataset_mode == "All Parcels":
+        if sample_size and loaded_count < total_parcel_count:
+            data_status.success(
+                f"✅ Loaded {loaded_count:,} parcels (sampled from {total_parcel_count:,} total) in {data_load_time:.1f}s"
+            )
+        else:
+            data_status.success(
+                f"✅ Loaded {loaded_count:,} parcels in {data_load_time:.1f}s"
+            )
     else:
-        data_status.success(f"✅ Loaded {len(parcels_gdf):,} target owner parcels and {len(target_owners)} investors in {data_load_time:.1f}s")
+        # Target owners mode
+        if loaded_count > 10000:
+            estimated_original = total_parcel_count
+            if estimated_original > loaded_count:
+                performance_gain = ((estimated_original - loaded_count) / estimated_original) * 100
+                data_status.success(
+                    f"✅ Loaded {loaded_count:,} target owner parcels in {data_load_time:.1f}s "
+                    f"(~{performance_gain:.0f}% faster by filtering {estimated_original:,} total parcels!)"
+                )
+            else:
+                data_status.success(f"✅ Loaded {loaded_count:,} target owner parcels in {data_load_time:.1f}s")
+        else:
+            data_status.success(f"✅ Loaded {loaded_count:,} parcels and {len(target_owners)} investors in {data_load_time:.1f}s")
 
     time.sleep(0.5)  # Brief pause to show message
 
@@ -460,20 +568,54 @@ if len(target_parcels) == 0:
 
 parcel_count = len(target_parcels)
 
-# Show performance recommendations for large datasets
-if parcel_count > 50000:
-    st.info(
-        f"📊 **Large Dataset Detected:** {parcel_count:,} parcels\n\n"
-        f"✅ **Optimizations Active:**\n"
-        f"- Database filtering (only target owners loaded)\n"
-        f"- Geometry simplification (reduces file size by ~60-80%)\n"
-        f"- Marker clustering (groups nearby parcels)\n\n"
-        f"💡 **Tip:** If map still loads slowly, try 'Lower Detail' or 'Minimum Detail' in Performance Settings above."
-    )
-elif parcel_count > 20000:
-    st.info(
-        f"📊 **Medium Dataset:** {parcel_count:,} parcels - optimizations active for smooth performance"
-    )
+# Show dataset information and performance recommendations
+if dataset_mode == "All Parcels":
+    # All Parcels mode - show total and sampling info
+    if sample_size and parcel_count < total_parcel_count:
+        st.info(
+            f"📊 **Dataset:** {parcel_count:,} parcels loaded (sampled from {total_parcel_count:,} total - "
+            f"{(parcel_count/total_parcel_count*100):.0f}% of full dataset)\n\n"
+            f"✅ **Optimizations Active:**\n"
+            f"- Random sampling (ensures fast loading)\n"
+            f"- Geometry simplification (reduces file size)\n"
+            f"- Marker clustering (groups nearby parcels)\n\n"
+            f"💡 **Tip:** Adjust sample size in Performance Settings to load more/fewer parcels."
+        )
+    elif parcel_count > 50000:
+        st.warning(
+            f"📊 **Large Dataset:** {parcel_count:,} parcels loaded (full dataset)\n\n"
+            f"⚠️ **Performance Impact:** Loading may take 10+ seconds\n\n"
+            f"✅ **Optimizations Active:**\n"
+            f"- Geometry simplification (reduces file size)\n"
+            f"- Marker clustering (groups nearby parcels)\n\n"
+            f"💡 **Recommendations:**\n"
+            f"- Enable 'Smart Sampling' in Performance Settings\n"
+            f"- Use 'Lower Detail' or 'Minimum Detail' geometry\n"
+            f"- Or switch to 'Target Owners Only' mode"
+        )
+    elif parcel_count > 20000:
+        st.info(
+            f"📊 **Medium Dataset:** {parcel_count:,} parcels - optimizations active for smooth performance"
+        )
+    else:
+        st.success(f"📊 **Dataset:** {parcel_count:,} parcels loaded - excellent performance expected!")
+else:
+    # Target Owners Only mode
+    if parcel_count > 50000:
+        st.info(
+            f"📊 **Large Dataset Detected:** {parcel_count:,} parcels\n\n"
+            f"✅ **Optimizations Active:**\n"
+            f"- Database filtering (only target owners: {len(target_owners)} investors)\n"
+            f"- Geometry simplification (reduces file size by ~60-80%)\n"
+            f"- Marker clustering (groups nearby parcels)\n\n"
+            f"💡 **Tip:** If map still loads slowly, try 'Lower Detail' or 'Minimum Detail' in Performance Settings."
+        )
+    elif parcel_count > 20000:
+        st.info(
+            f"📊 **Medium Dataset:** {parcel_count:,} parcels from {len(target_owners)} target investors - optimizations active"
+        )
+    else:
+        st.success(f"📊 **Dataset:** {parcel_count:,} parcels from {len(target_owners)} target investors")
 
 # ====================================
 # Determine display parcels based on selection
@@ -519,9 +661,15 @@ with col_sidebar:
     )
     st.markdown("</div>", unsafe_allow_html=True)
     
-    # Target Investors List
-    st.markdown("<h3 style='font-size: 1.25rem; margin-top: 1.75rem; margin-bottom: 1rem;'>Target Investors</h3>", unsafe_allow_html=True)
-    
+    # Investors List (title depends on mode)
+    if dataset_mode == "All Parcels":
+        st.markdown("<h3 style='font-size: 1.25rem; margin-top: 1.75rem; margin-bottom: 1rem;'>All Property Owners</h3>", unsafe_allow_html=True)
+        st.caption("Showing all owners in the dataset (or sample)")
+    else:
+        st.markdown("<h3 style='font-size: 1.25rem; margin-top: 1.75rem; margin-bottom: 1rem;'>Target Investors</h3>", unsafe_allow_html=True)
+        if len(target_owners) > 0:
+            st.caption(f"Showing {len(target_owners)} target investors with properties")
+
     # Calculate stats per owner (optimized with groupby)
     if not target_parcels.empty:
         # Group by owner and calculate stats efficiently
@@ -529,9 +677,9 @@ with col_sidebar:
             'parcel_pin': 'count',  # Count of properties
             'par_zip': 'nunique'    # Unique ZIP codes
         }).reset_index()
-        
+
         owner_groups.columns = ['owner', 'properties', 'zips']
-        
+
         # Convert to list of dicts and sort by property count
         owner_stats_list = owner_groups.to_dict('records')
         owner_stats_list.sort(key=lambda x: x['properties'], reverse=True)
@@ -799,8 +947,25 @@ with col_map:
         # ====================================
         # GENERATE MAP (with caching + session state)
         # ====================================
-        # Only include investors who actually own properties (for map performance)
-        investors_with_properties = [owner for owner in stats_per_owner.keys() if stats_per_owner[owner]['count'] > 0]
+        # Handle different dataset modes
+        if dataset_mode == "All Parcels":
+            # In All Parcels mode, use all unique owners from loaded parcels
+            # (target_owners list may be empty)
+            all_unique_owners = target_parcels['owner_clean'].dropna().unique().tolist()
+            investors_with_properties = [owner for owner in stats_per_owner.keys() if stats_per_owner[owner]['count'] > 0]
+
+            # If we have a large number of owners, limit to top N to avoid performance issues
+            if len(investors_with_properties) > 100:
+                # Sort by property count and take top 100
+                sorted_owners = sorted(investors_with_properties, key=lambda o: stats_per_owner[o]['count'], reverse=True)
+                investors_with_properties = sorted_owners[:100]
+                if not selected_owner or selected_owner not in investors_with_properties:
+                    # Show warning that we're limiting
+                    pass  # We'll show this later
+
+        else:
+            # Target Owners Only mode - use defined target owners
+            investors_with_properties = [owner for owner in stats_per_owner.keys() if stats_per_owner[owner]['count'] > 0]
 
         # PERFORMANCE OPTIMIZATION: If filtering to a single investor, only generate that investor's layer
         # This dramatically speeds up map generation when viewing individual investors
@@ -811,8 +976,8 @@ with col_map:
             map_target_owners = investors_with_properties
             map_stats_per_owner = stats_per_owner
 
-        # Create cache key for session state - now includes view_mode
-        current_map_key = f"{selected_city_id}_{view_mode}_{st.session_state.get('selected_owner', 'all')}"
+        # Create cache key for session state - includes city, dataset mode, view mode, owner, and sample size
+        current_map_key = f"{selected_city_id}_{dataset_mode}_{sample_size}_{view_mode}_{st.session_state.get('selected_owner', 'all')}"
         previous_map_key = st.session_state.get('map_cache_key', None)
 
         # Check if we need to regenerate the map
