@@ -37,7 +37,7 @@ class LayerBuilder:
     ):
         """
         Initialize the layer builder.
-        
+
         Args:
             gdf: GeoDataFrame with parcels (must have 'owner_clean' column)
             target_owners: List of target owner names
@@ -45,25 +45,73 @@ class LayerBuilder:
         """
         self.gdf = gdf.copy()
         self.target_owners = target_owners
-        
+
+        # PERFORMANCE FIX: Sanitize data for GeoJSON/Folium compatibility
+        # Converts PostgreSQL types (Decimal, Timestamp) to JSON-safe types (float, string)
+        self._sanitize_for_geojson()
+
         # Generate colors if not provided
         if owner_colors is None:
             self.owner_colors = ColorScheme.generate_owner_colors(target_owners)
         else:
             self.owner_colors = owner_colors
-        
+
         # Detect actual column names in the GeoDataFrame
         self._detect_column_names()
-        
+
         # Get available popup fields
         self.popup_fields = PopupConfig.get_available_fields(gdf.columns.tolist())
         self.popup_aliases = PopupConfig.get_aliases(self.popup_fields)
-        
+
         logger.info(
             f"LayerBuilder initialized: {len(gdf)} parcels, "
             f"{len(target_owners)} owners, {len(self.popup_fields)} popup fields"
         )
-    
+
+    def _sanitize_for_geojson(self):
+        """
+        Sanitize GeoDataFrame for GeoJSON/Folium compatibility.
+
+        PERFORMANCE FIX: Folium/GeoJSON can choke on certain data types from PostgreSQL.
+        This method converts problematic types to JSON-safe equivalents:
+        - Decimal → float
+        - Timestamp/datetime → string
+        - Other objects → string (except geometry)
+
+        Based on sanitize_for_geojson() from original ClevelandMap.py
+        """
+        if self.gdf.empty:
+            return
+
+        for col in self.gdf.columns:
+            # Never touch the geometry column
+            if col == "geometry":
+                continue
+
+            # Convert datetime/timestamp to string
+            if pd.api.types.is_datetime64_any_dtype(self.gdf[col]):
+                self.gdf[col] = self.gdf[col].astype(str)
+                logger.debug(f"Converted datetime column '{col}' to string")
+
+            # Convert Decimal and other numeric-like objects to float
+            elif self.gdf[col].dtype == "object":
+                # Check if first non-null value is a Decimal type
+                sample = self.gdf[col].dropna().head(1)
+                if not sample.empty:
+                    sample_val = sample.iloc[0]
+                    # Check for Decimal type (from PostgreSQL)
+                    if hasattr(sample_val, '__float__') and type(sample_val).__name__ == 'Decimal':
+                        self.gdf[col] = self.gdf[col].apply(
+                            lambda x: float(x) if x is not None and pd.notna(x) else x
+                        )
+                        logger.debug(f"Converted Decimal column '{col}' to float")
+                    else:
+                        # Convert other objects to string (safer for JSON)
+                        self.gdf[col] = self.gdf[col].astype(str)
+                        logger.debug(f"Converted object column '{col}' to string")
+
+        logger.info("Data sanitization complete - all types now JSON-safe")
+
     def _detect_column_names(self):
         """
         Detect and standardize column names to handle variations.
@@ -116,29 +164,37 @@ class LayerBuilder:
     def build_base_layer(self, name: str = "All Target Owners (context)") -> folium.GeoJson:
         """
         Build base context layer showing all target owner parcels in light grey.
-        
+
+        PERFORMANCE FIX: Only includes geometry column to minimize file size.
+        Base layer is just a visual context (grey outlines), no popups needed.
+
         Args:
             name: Name for the layer
-        
+
         Returns:
             Folium GeoJson layer
         """
         logger.info(f"Building base context layer with {len(self.gdf)} features")
-        
+
         if self.gdf.empty:
             logger.warning("GeoDataFrame is empty, creating empty layer")
             return folium.FeatureGroup(name=f"{name} (0)")
-        
+
         base_style = LayerStyles.get_base_style()
-        
+
+        # PERFORMANCE FIX: Create minimal GeoDataFrame with only geometry column
+        # This dramatically reduces file size (60-80% reduction for large datasets)
+        # Base layer is just visual context - no popups or data needed
+        minimal_gdf = self.gdf[['geometry']].copy()
+
         layer = folium.GeoJson(
-            self.gdf,
+            minimal_gdf,  # Only geometry, no attributes
             name=name,
             style_function=lambda x: base_style,
             show=True  # Base layer shown by default
         )
-        
-        logger.debug(f"Base layer created: {name}")
+
+        logger.debug(f"Base layer created with minimal geometry only: {name}")
         return layer
     
     def build_clustered_layer(

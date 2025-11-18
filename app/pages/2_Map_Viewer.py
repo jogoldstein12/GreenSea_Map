@@ -66,7 +66,7 @@ def generate_cached_map(
             target_owners=_target_owners,
             stats_per_owner=_stats_per_owner,
             all_stats=_all_stats,
-            use_clustering=True,
+            use_clustering=False,  # PERFORMANCE FIX: Disabled (original doesn't use it, polygons work better without clustering)
             view_mode=actual_view_mode,
             include_zip_layers=False  # Disabled for performance (can be 50-100+ layers)
         )
@@ -212,9 +212,7 @@ try:
             st.switch_page("pages/3_Upload_Data.py")
         st.stop()
 
-    # City selector in glass card
-    st.markdown('<div class="glass-card" style="margin-bottom: 1.5rem;">', unsafe_allow_html=True)
-    
+    # City selector
     # Get selected city from session state or use first city as default
     default_city_id = st.session_state.get('selected_city_id', cities[0]['city_id'])
     
@@ -242,14 +240,12 @@ try:
     # Store in session state
     st.session_state.selected_city_id = selected_city_id
     
-    st.markdown('</div>', unsafe_allow_html=True)
-    
     # Display selected city info
-    with db_manager.get_session() as session:
-        selected_city_obj = session.query(City).filter(City.city_id == selected_city_id).first()
-        
-        if selected_city_obj:
-            st.info(f"**Selected Market:** {selected_city_obj.display_name}")
+    # with db_manager.get_session() as session:
+    #    selected_city_obj = session.query(City).filter(City.city_id == selected_city_id).first()
+    #    
+    #    if selected_city_obj:
+    #        st.info(f"**Selected Market:** {selected_city_obj.display_name}")
 
 except Exception as e:
     st.error(f"Error loading cities: {str(e)}")
@@ -461,29 +457,33 @@ if len(target_parcels) == 0:
 parcel_count = len(target_parcels)
 
 # Show performance recommendations for large datasets
-if parcel_count > 50000:
-    st.info(
-        f"📊 **Large Dataset Detected:** {parcel_count:,} parcels\n\n"
-        f"✅ **Optimizations Active:**\n"
-        f"- Database filtering (only target owners loaded)\n"
-        f"- Geometry simplification (reduces file size by ~60-80%)\n"
-        f"- Marker clustering (groups nearby parcels)\n\n"
-        f"💡 **Tip:** If map still loads slowly, try 'Lower Detail' or 'Minimum Detail' in Performance Settings above."
-    )
-elif parcel_count > 20000:
-    st.info(
-        f"📊 **Medium Dataset:** {parcel_count:,} parcels - optimizations active for smooth performance"
-    )
+# if parcel_count > 50000:
+#    st.info(
+#        f"📊 **Large Dataset Detected:** {parcel_count:,} parcels\n\n"
+#        f"✅ **Optimizations Active:**\n"
+#        f"- Database filtering (only target owners loaded)\n"
+#        f"- Geometry simplification (reduces file size by ~60-80%)\n"
+#        f"- Marker clustering (groups nearby parcels)\n\n"
+#        f"💡 **Tip:** If map still loads slowly, try 'Lower Detail' or 'Minimum Detail' in Performance Settings above."
+#    )
+#elif parcel_count > 20000:
+#    st.info(
+#        f"📊 **Medium Dataset:** {parcel_count:,} parcels - optimizations active for smooth performance"
+#    )
 
 # ====================================
 # Determine display parcels based on selection
 # ====================================
+# PERFORMANCE FIX: Default to empty map instead of loading all 100k+ parcels
+# User must select an investor to load their portfolio
 
 selected_owner = st.session_state.get('selected_owner', None)
 if selected_owner:
     display_parcels = target_parcels[target_parcels['owner_clean'] == selected_owner].copy()
 else:
-    display_parcels = target_parcels.copy()
+    # Default: Empty GeoDataFrame - no parcels loaded until investor selected
+    # This prevents browser crashes with large datasets (100k+ parcels)
+    display_parcels = gpd.GeoDataFrame(columns=target_parcels.columns, crs=target_parcels.crs if not target_parcels.empty else 'EPSG:4326')
 
 # ====================================
 # Two-Column Layout
@@ -496,33 +496,12 @@ col_sidebar, col_map = st.columns([1, 3])
 # ====================================
 
 with col_sidebar:
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+#    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     
     # Portfolio Search
     st.markdown("<h3 style='font-size: 1.25rem; margin-bottom: 1rem;'>Portfolio Search</h3>", unsafe_allow_html=True)
-    search_term = st.text_input(
-        "Search by investor name",
-        placeholder="Search investors...",
-        label_visibility="collapsed",
-        key="investor_search"
-    )
     
-    # View Toggle
-    st.markdown("<div style='margin: 1.5rem 0 1rem 0;'>", unsafe_allow_html=True)
-    st.markdown("<p style='font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.5rem;'>View Mode</p>", unsafe_allow_html=True)
-    view_mode = st.radio(
-        "View Mode",
-        options=["By Owner", "By ZIP"],
-        horizontal=True,
-        label_visibility="collapsed",
-        key="view_mode"
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Target Investors List
-    st.markdown("<h3 style='font-size: 1.25rem; margin-top: 1.75rem; margin-bottom: 1rem;'>Target Investors</h3>", unsafe_allow_html=True)
-    
-    # Calculate stats per owner (optimized with groupby)
+    # Calculate stats per owner first (before search) so we have the full list
     if not target_parcels.empty:
         # Group by owner and calculate stats efficiently
         owner_groups = target_parcels.groupby('owner_clean').agg({
@@ -538,22 +517,43 @@ with col_sidebar:
     else:
         owner_stats_list = []
     
+    # Get list of all investor names for autocomplete
+    all_investor_names = sorted([o['owner'] for o in owner_stats_list])
+    
+    # Search with autocomplete suggestions
+    search_term = st.selectbox(
+        "Search by investor name",
+        options=[""] + all_investor_names,
+        format_func=lambda x: "Search investors..." if x == "" else x,
+        placeholder="Search investors...",
+        label_visibility="collapsed",
+        key="investor_search",
+        help="Select an investor to filter the list"
+    )
+    
+    # View Toggle
+    st.markdown("<p style='font-size: 0.875rem; color: var(--text-muted); margin-bottom: 0.5rem;'>View Mode</p>", unsafe_allow_html=True)
+    view_mode = st.radio(
+        "View Mode",
+        options=["By Owner", "By ZIP"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="view_mode"
+    )
+    
+    # Target Investors List
+    st.markdown("<h3 style='font-size: 1.25rem; margin-top: 1.75rem; margin-bottom: 1rem;'>Target Investors</h3>", unsafe_allow_html=True)
+    
     # Display owner list with search filter
     filtered_owners = owner_stats_list
     
-    # Apply search filter only if user has typed something
+    # Apply search filter if user has selected something
     if search_term and len(search_term.strip()) > 0:
-        filtered_owners = [o for o in owner_stats_list if search_term.upper() in o['owner']]
-        
-        # Show message if search returns no results
-        if not filtered_owners:
-            st.warning(f"🔍 No investors match '{search_term}'. Try a different search term.")
-            st.info(f"💡 Showing all {len(owner_stats_list)} investors with properties instead.")
-            filtered_owners = owner_stats_list  # Fall back to showing all
+        filtered_owners = [o for o in owner_stats_list if o['owner'] == search_term]
     
     # Show investor count and filtering status
     if search_term and len(search_term.strip()) > 0:
-        st.caption(f"📊 Showing {len(filtered_owners)} of {len(owner_stats_list)} investors (filtered)")
+        st.caption(f"📊 Showing {len(filtered_owners)} investor{'s' if len(filtered_owners) != 1 else ''} (selected)")
     else:
         st.caption(f"📊 Showing {min(len(filtered_owners), 50)} of {len(owner_stats_list)} investors with properties")
     
@@ -604,11 +604,9 @@ with col_sidebar:
         
         # Show selected owner controls
         if selected_owner:
-            st.markdown("<div style='margin-top: 1rem;'>", unsafe_allow_html=True)
             if st.button("🔄 Clear Selection", use_container_width=True):
                 st.session_state.selected_owner = None
                 st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
     else:
         # No investors with properties found
         st.info("📊 No target investors with properties found. Upload data to get started.")
@@ -651,7 +649,6 @@ with col_sidebar:
         """, unsafe_allow_html=True)
     
     # Stats grid - Row 2
-    st.markdown("<div style='margin-top: 0.75rem;'>", unsafe_allow_html=True)
     stats_col3, stats_col4 = st.columns(2)
     
     with stats_col3:
@@ -716,8 +713,8 @@ with col_map:
         # VALIDATION: Check GeoDataFrame
         # ====================================
         
-        if st.session_state.get('debug_mode', False):
-            st.info(f"🔍 Debug: Processing {len(display_parcels)} parcels for mapping...")
+        # if st.session_state.get('debug_mode', False):
+        #    st.info(f"🔍 Debug: Processing {len(display_parcels)} parcels for mapping...")
         
         # Validate GeoDataFrame has required columns
         required_cols = ['geometry', 'owner_clean']
@@ -726,15 +723,33 @@ with col_map:
             st.error(f"❌ Missing required columns: {missing_cols}")
             st.stop()
         
+        # Check if display_parcels is empty (no investor selected)
+        if display_parcels.empty:
+            # Show friendly prompt to select an investor
+        #    st.markdown('<div class="glass-card" style="padding: 3rem; text-align: center;">', unsafe_allow_html=True)
+            st.markdown("### 👈 Select an Investor to View Their Portfolio")
+            st.markdown(
+                "<p style='font-size: 1rem; color: var(--text-muted); margin-top: 1rem;'>"
+                "Choose an investor from the sidebar to display their property portfolio on the map."
+                "</p>",
+                unsafe_allow_html=True
+            )
+            st.info(
+                "💡 **Performance Tip:** By loading only selected portfolios, "
+                "the map renders quickly even with 100,000+ total parcels in the database."
+            )
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.stop()
+
         # Validate geometries exist and are valid
         null_geom_count = display_parcels['geometry'].isna().sum()
         if null_geom_count > 0:
             st.warning(f"⚠️ Found {null_geom_count} parcels with null geometries (will be excluded)")
             display_parcels = display_parcels[display_parcels['geometry'].notna()].copy()
-        
-        # Check if we still have data
+
+        # Final check after filtering null geometries
         if display_parcels.empty:
-            st.error("❌ No valid parcel geometries found for mapping")
+            st.error("❌ No valid parcel geometries found for the selected investor")
             st.stop()
         
         # Validate GeoDataFrame CRS
@@ -822,58 +837,60 @@ with col_map:
         )
 
         if needs_regeneration:
-            # Progress indicator
-            progress_container = st.empty()
-            progress_bar = st.progress(0)
-            status_text = st.empty()
+            # Progress indicator using container for proper cleanup
+            progress_container = st.container()
 
             try:
-                # Step 1: Preparing data
-                start_time = time.time()
-                progress_bar.progress(20)
-                status_text.info(f"🗺️ Step 1/3: Preparing map data ({len(display_parcels):,} parcels, {len(map_target_owners)} investor{'s' if len(map_target_owners) != 1 else ''})...")
-                time.sleep(0.1)  # Brief pause for UI update
+                with progress_container:
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
 
-                # Step 2: Generate map layers
-                progress_bar.progress(40)
-                status_text.info(f"🗺️ Step 2/3: Generating map layers with clustering ({view_mode} mode)...")
+                    # Step 1: Preparing data
+                    start_time = time.time()
+                    progress_bar.progress(20)
+                    status_text.info(f"🗺️ Step 1/3: Preparing map data ({len(display_parcels):,} parcels, {len(map_target_owners)} investor{'s' if len(map_target_owners) != 1 else ''})...")
+                    time.sleep(0.1)  # Brief pause for UI update
 
-                # Use cached map generation function
-                # Cache key: city_id, view_mode, selected_owner
-                # Data parameters prefixed with _ are not included in cache key
-                folium_map = generate_cached_map(
-                    city_id=selected_city_id,
-                    view_mode=view_mode,
-                    selected_owner=st.session_state.get('selected_owner', None),
-                    _parcels_gdf=display_parcels,
-                    _city_config=city_config,
-                    _target_owners=map_target_owners,
-                    _stats_per_owner=map_stats_per_owner,
-                    _all_stats=all_stats,
-                    _view_mode_param=view_mode  # Pass to actual generator
-                )
+                    # Step 2: Generate map layers
+                    progress_bar.progress(40)
+                    status_text.info(f"🗺️ Step 2/3: Generating map layers ({view_mode} mode)...")
+
+                    # Use cached map generation function
+                    # Cache key: city_id, view_mode, selected_owner
+                    # Data parameters prefixed with _ are not included in cache key
+                    # PERFORMANCE FIX: use_clustering=False (original script doesn't use clustering and works fine)
+                    # Clustering is designed for point markers, not polygon features
+                    folium_map = generate_cached_map(
+                        city_id=selected_city_id,
+                        view_mode=view_mode,
+                        selected_owner=st.session_state.get('selected_owner', None),
+                        _parcels_gdf=display_parcels,
+                        _city_config=city_config,
+                        _target_owners=map_target_owners,
+                        _stats_per_owner=map_stats_per_owner,
+                        _all_stats=all_stats,
+                        _view_mode_param=view_mode  # Pass to actual generator
+                    )
+                    
+                    if folium_map is None:
+                        raise ValueError("Map generator returned None")
+                    
+                    # Step 3: Caching results
+                    progress_bar.progress(80)
+                    status_text.info("🗺️ Step 3/3: Caching map for fast future loads...")
+                    
+                    # Store in session state
+                    st.session_state.cached_map = folium_map
+                    st.session_state.map_cache_key = current_map_key
+                    
+                    # Complete
+                    progress_bar.progress(100)
+                    elapsed_time = time.time() - start_time
+                    status_text.success(f"✅ Map generated successfully in {elapsed_time:.1f}s! (cached for 1 hour)")
+                    time.sleep(1)  # Show success message briefly
                 
-                if folium_map is None:
-                    raise ValueError("Map generator returned None")
-                
-                # Step 3: Caching results
-                progress_bar.progress(80)
-                status_text.info("🗺️ Step 3/3: Caching map for fast future loads...")
-                
-                # Store in session state
-                st.session_state.cached_map = folium_map
-                st.session_state.map_cache_key = current_map_key
-                
-                # Complete
-                progress_bar.progress(100)
-                elapsed_time = time.time() - start_time
-                status_text.success(f"✅ Map generated successfully in {elapsed_time:.1f}s! (cached for 1 hour)")
-                time.sleep(1)  # Show success message briefly
-                
-                # Clear progress indicators
+                # Clear progress indicators by clearing the container
                 progress_container.empty()
-                progress_bar.empty()
-                status_text.empty()
                 
             except Exception as map_error:
                 st.error(f"❌ Map generation failed: {str(map_error)}")
@@ -892,10 +909,10 @@ with col_map:
                 st.stop()
         else:
             # Map already exists in session state - reusing it
-            cached_msg = st.empty()
-            cached_msg.success(f"♻️ Using cached map (instant load! - {view_mode} mode)")
-            time.sleep(0.5)  # Brief message
-            cached_msg.empty()
+            # Use a container so it can be properly cleared without leaving empty space
+            with st.container():
+                st.success(f"♻️ Using cached map (instant load! - {view_mode} mode)")
+                time.sleep(0.3)  # Brief message
         
         # Retrieve map from session state for display
         folium_map = st.session_state.get('cached_map', None)
@@ -903,30 +920,28 @@ with col_map:
             st.error("❌ No map available in session state")
             st.stop()
         
-        # Display map in glass container
-        st.markdown('<div class="glass-card" style="padding: 0; overflow: hidden; min-height: 700px;">', unsafe_allow_html=True)
-        
-        try:
-            # Show rendering indicator
-            with st.spinner("🌍 Rendering interactive map..."):
-                st_folium(folium_map, width=None, height=700, returned_objects=[])
-        except Exception as render_error:
-            st.error(f"❌ Map rendering failed: {str(render_error)}")
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Display map using Streamlit container (cleaner than raw HTML divs)
+        with st.container():
+            st.markdown('<div class="glass-card" style="padding: 0; overflow: hidden;">', unsafe_allow_html=True)
             
-            # Fallback: Show basic map info
-            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-            st.warning("⚠️ Unable to render interactive map. Showing data summary instead:")
-            st.metric("Total Parcels", len(display_parcels))
-            st.metric("Target Investors", len(target_owners))
-            st.metric("Map Center", f"{city_config['center_lat']:.4f}, {city_config['center_lng']:.4f}")
-            st.markdown('</div>', unsafe_allow_html=True)
+            try:
+                # Show rendering indicator
+                with st.spinner("🌍 Rendering interactive map..."):
+                    st_folium(folium_map, width=None, height=700, returned_objects=[])
+            except Exception as render_error:
+                st.error(f"❌ Map rendering failed: {str(render_error)}")
+                
+                # Fallback: Show basic map info
+                st.warning("⚠️ Unable to render interactive map. Showing data summary instead:")
+                st.metric("Total Parcels", len(display_parcels))
+                st.metric("Target Investors", len(target_owners))
+                st.metric("Map Center", f"{city_config['center_lat']:.4f}, {city_config['center_lng']:.4f}")
+                
+                if st.session_state.get('debug_mode', False):
+                    st.exception(render_error)
+                st.stop()
             
-            if st.session_state.get('debug_mode', False):
-                st.exception(render_error)
-            st.stop()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
         
         # Property Details Table (placeholder for future map click interaction)
         st.markdown('<div class="glass-card" style="margin-top: 1.5rem;">', unsafe_allow_html=True)
